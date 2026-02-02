@@ -1,80 +1,370 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sw">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HotspotMtaani Admin - Management System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HotspotMtaani Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @media print {
-            .no-print { display: none !important; }
-            .print-only { display: block !important; }
-            body { background: white !important; padding: 0 !important; }
-        }
-        .print-only { display: none; }
-        
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #8d6e63; border-radius: 10px; }
-        
         body {
             background-color: #fcfbf9;
             color: #1c1917;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: system-ui, -apple-system, sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
-
-        .countdown-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        .active-tab {
+            color: #5d4037 !important;
+            border-bottom: 2px solid #5d4037 !important;
         }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: .5; }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #8d6e63;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-
-        .voucher-grid-item {
-            border: 1px solid #000;
-            padding: 10px;
-            text-align: center;
-            page-break-inside: avoid;
+        .loading-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
         }
     </style>
 </head>
-<body>
-    <div id="app" class="min-h-screen">
+<body class="pb-10">
+
+    <!-- Loading Screen (Toggles Off via JS) -->
+    <div id="loader" class="loading-screen">
+        <div class="text-center">
+            <div class="w-8 h-8 border-4 border-[#8d6e63] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-stone-400">Inapakia Mfumo...</p>
+        </div>
+    </div>
+
+    <!-- App Shell -->
+    <div id="app-shell" class="hidden">
         <!-- Navigation -->
-        <header class="no-print bg-white border-b border-stone-200 sticky top-0 z-50">
-            <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <div class="bg-[#5d4037] p-2 rounded-lg text-white shadow-lg">
-                        <i data-lucide="wifi" class="w-5 h-5"></i>
+        <header class="bg-white border-b border-stone-200 sticky top-0 z-50">
+            <div class="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="bg-[#5d4037] p-1.5 rounded-lg text-white">
+                        <i data-lucide="wifi" class="w-4 h-4"></i>
                     </div>
-                    <div>
-                        <h1 class="font-black text-sm uppercase tracking-tighter leading-none">Hotspot Mtaani</h1>
-                        <span class="text-[9px] text-stone-400 font-bold uppercase tracking-widest">Voucher Manager</span>
-                    </div>
+                    <h1 class="font-black text-xs uppercase tracking-tighter">Mtaani Admin</h1>
                 </div>
-                <nav class="flex gap-6">
-                    <button id="nav-home" class="text-[10px] font-black uppercase tracking-widest text-[#5d4037] border-b-2 border-[#5d4037] pb-1">Dashboard</button>
-                    <button id="nav-expired" class="text-[10px] font-black uppercase tracking-widest text-stone-400 hover:text-stone-600 transition-all pb-1">Zilizokwisha</button>
-                    <button id="nav-settings" class="text-[10px] font-black uppercase tracking-widest text-stone-400 hover:text-stone-600 transition-all pb-1">Mfumo</button>
+                <nav class="flex gap-4">
+                    <button id="nav-home" class="text-[9px] font-black uppercase tracking-widest pb-1 active-tab">Home</button>
+                    <button id="nav-expired" class="text-[9px] font-black uppercase tracking-widest text-stone-400 pb-1">Zilizokwisha</button>
+                    <button id="nav-settings" class="text-[9px] font-black uppercase tracking-widest text-stone-400 pb-1">Mfumo</button>
                 </nav>
             </div>
         </header>
 
-        <!-- Main Content Container -->
-        <main id="main-content" class="max-w-6xl mx-auto p-4 md:p-8 no-print">
-            <!-- Content will be loaded here by JavaScript -->
+        <!-- Main Content -->
+        <main id="main-content" class="max-w-4xl mx-auto p-4 space-y-6">
+            <!-- Content Injected by JS -->
         </main>
-
-        <!-- Print Layout -->
-        <div id="print-layout" class="print-only">
-            <!-- Vouchers for printing -->
-        </div>
     </div>
 
-    <!-- Scripts -->
-    <script type="module" src="index.tsx"></script>
+    <script>
+        // --- 1. System Setup ---
+        const STORAGE_KEY = 'hotspot_mtaani_v5_final';
+        const BUNDLES = [
+            { id: 'b1', name: 'SAA 1 (High Speed)', price: 200, minutes: 60 },
+            { id: 'b2', name: 'SAA 6 UNLIMITED', price: 500, minutes: 360 },
+            { id: 'b3', name: 'SAA 24 UNLIMITED', price: 1000, minutes: 1440 },
+            { id: 'b4', name: 'WIKI 1 UNLIMITED', price: 5000, minutes: 10080 }
+        ];
+
+        let state = {
+            vouchers: [],
+            activeTab: 'home',
+            selectedBundleId: 'b1',
+            batchSize: 10
+        };
+
+        // --- 2. Data Persistence ---
+        function loadData() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                if (data) {
+                    state.vouchers = JSON.parse(data) || [];
+                }
+            } catch (e) {
+                state.vouchers = [];
+            }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state.vouchers));
+            } catch (e) {
+                alert("Storage imejaa! Futa vocha za zamani.");
+            }
+        }
+
+        // --- 3. Logic ---
+        function generateCode() {
+            const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+            let res = '';
+            for (let i = 0; i < 4; i++) res += chars.charAt(Math.floor(Math.random() * chars.length));
+            return `HM-${res}`;
+        }
+
+        function createBatch() {
+            const bundle = BUNDLES.find(b => b.id === state.selectedBundleId);
+            if (!bundle) return;
+            
+            const newVouchers = [];
+            for (let i = 0; i < state.batchSize; i++) {
+                newVouchers.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    code: generateCode(),
+                    bundleName: bundle.name,
+                    duration: bundle.minutes,
+                    price: bundle.price,
+                    status: 'available',
+                    createdAt: Date.now(),
+                    activatedAt: null,
+                    expiresAt: null
+                });
+            }
+            state.vouchers = [...state.vouchers, ...newVouchers];
+            saveData();
+            render();
+        }
+
+        function activateVoucher(id) {
+            const v = state.vouchers.find(x => x.id === id);
+            if (!v) return;
+            
+            if (confirm(`Unataka kuanzisha muda wa ${v.code}?`)) {
+                const now = Date.now();
+                state.vouchers = state.vouchers.map(x => x.id === id ? {
+                    ...x,
+                    status: 'active',
+                    activatedAt: now,
+                    expiresAt: now + (x.duration * 60000)
+                } : x);
+                saveData();
+                render();
+            }
+        }
+
+        function deleteVoucher(id) {
+            if (confirm("Futa kabisa?")) {
+                state.vouchers = state.vouchers.filter(v => v.id !== id);
+                saveData();
+                render();
+            }
+        }
+
+        function getTimeLeft(expiresAt) {
+            if (!expiresAt) return "";
+            const diff = expiresAt - Date.now();
+            if (diff <= 0) return "IMEISHA";
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+        }
+
+        // --- 4. Rendering ---
+        function render() {
+            const container = document.getElementById('main-content');
+            if (!container) return;
+
+            // Nav Highlight
+            ['nav-home', 'nav-expired', 'nav-settings'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    if (id.includes(state.activeTab)) el.classList.add('active-tab');
+                    else el.classList.remove('active-tab');
+                }
+            });
+
+            if (state.activeTab === 'home') renderHome(container);
+            else if (state.activeTab === 'expired') renderExpired(container);
+            else renderSettings(container);
+
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        function renderHome(container) {
+            const available = state.vouchers.filter(v => v.status === 'available');
+            const active = state.vouchers.filter(v => v.status === 'active');
+            const revenue = state.vouchers.filter(v => v.status !== 'available').reduce((s, v) => s + (v.price || 0), 0);
+
+            container.innerHTML = `
+                <!-- Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="bg-white border p-4 rounded-xl">
+                        <p class="text-[8px] font-black text-stone-400 uppercase tracking-widest">Stock</p>
+                        <h2 class="text-xl font-black">${available.length}</h2>
+                    </div>
+                    <div class="bg-[#5d4037] text-white p-4 rounded-xl shadow-md">
+                        <p class="text-[8px] font-black opacity-60 uppercase tracking-widest">Active</p>
+                        <h2 class="text-xl font-black">${active.length}</h2>
+                    </div>
+                    <div class="bg-white border p-4 rounded-xl">
+                        <p class="text-[8px] font-black text-stone-400 uppercase tracking-widest">Mapato</p>
+                        <h2 class="text-xl font-black text-emerald-600">${revenue.toLocaleString()} Tzs</h2>
+                    </div>
+                </div>
+
+                <!-- Generator -->
+                <div class="bg-white border rounded-xl p-5 space-y-4">
+                    <h3 class="text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
+                        <i data-lucide="zap" class="w-3 h-3 text-[#8d6e63]"></i> Zalisha Vocha
+                    </h3>
+                    <select id="bundle-sel" class="w-full bg-stone-50 border p-3 rounded-lg text-xs font-black">
+                        ${BUNDLES.map(b => `<option value="${b.id}" ${state.selectedBundleId === b.id ? 'selected' : ''}>${b.name} - ${b.price}Tzs</option>`).join('')}
+                    </select>
+                    <div class="flex items-center gap-3">
+                        <input id="batch-range" type="range" min="1" max="50" value="${state.batchSize}" class="flex-grow h-1 bg-stone-200 rounded-full appearance-none">
+                        <span class="text-xs font-black text-[#8d6e63] min-w-[20px]" id="range-val">${state.batchSize}</span>
+                    </div>
+                    <button onclick="createBatch()" class="w-full bg-[#8d6e63] text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest active:scale-95 transition-all">Tengeneza Vocha</button>
+                </div>
+
+                <!-- Active List -->
+                <div class="space-y-2">
+                    <h3 class="text-[8px] font-black text-stone-400 uppercase ml-1">Wateja Active (${active.length})</h3>
+                    <div class="bg-white border rounded-xl divide-y divide-stone-50">
+                        ${active.length === 0 ? '<p class="p-10 text-center text-stone-300 text-[9px] font-bold uppercase tracking-widest">Hakuna aliyepo hewani</p>' : 
+                        active.map(v => `
+                            <div class="p-4 flex justify-between items-center">
+                                <div>
+                                    <p class="font-mono font-black text-stone-800 text-sm tracking-widest">${v.code}</p>
+                                    <p class="text-[7px] text-stone-400 font-bold uppercase">${v.bundleName}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-[10px] font-black text-[#8d6e63]">${getTimeLeft(v.expiresAt)}</p>
+                                    <p class="text-[7px] text-stone-300 font-black uppercase">Unabaki</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Stock List -->
+                <div class="space-y-2">
+                    <h3 class="text-[8px] font-black text-stone-400 uppercase ml-1">Stock Iliyopo (${available.length})</h3>
+                    <div class="bg-white border rounded-xl divide-y divide-stone-50">
+                        ${available.length === 0 ? '<p class="p-10 text-center text-stone-300 text-[9px] font-bold uppercase">Zalisha vocha hapo juu</p>' : 
+                        available.map(v => `
+                            <div class="p-4 flex justify-between items-center active:bg-stone-50">
+                                <button onclick="activateVoucher('${v.id}')" class="text-left flex-grow">
+                                    <p class="font-mono font-black text-stone-600 text-sm tracking-widest">${v.code}</p>
+                                    <p class="text-[7px] text-stone-300 font-bold uppercase">${v.bundleName}</p>
+                                </button>
+                                <button onclick="deleteVoucher('${v.id}')" class="text-stone-200 p-2 text-[9px] font-black">FUTA</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            // Listeners
+            const sel = document.getElementById('bundle-sel');
+            if(sel) sel.onchange = (e) => state.selectedBundleId = e.target.value;
+            
+            const rng = document.getElementById('batch-range');
+            if(rng) rng.oninput = (e) => {
+                state.batchSize = e.target.value;
+                document.getElementById('range-val').innerText = e.target.value;
+            };
+        }
+
+        function renderExpired(container) {
+            const expired = state.vouchers.filter(v => v.status === 'expired');
+            container.innerHTML = `
+                <div class="bg-white border rounded-xl overflow-hidden">
+                    <div class="p-4 bg-stone-50 border-b flex justify-between items-center">
+                        <h2 class="text-[10px] font-black uppercase tracking-widest">Vocha Zilizokwisha</h2>
+                        <button onclick="clearExpired()" class="text-red-500 text-[9px] font-black uppercase">Futa Zote</button>
+                    </div>
+                    <div class="divide-y divide-stone-50">
+                        ${expired.length === 0 ? '<p class="p-16 text-center text-stone-300 text-[9px] uppercase font-black">Hakuna rekodi</p>' : 
+                        expired.map(v => `
+                            <div class="p-4 flex justify-between items-center opacity-50">
+                                <span class="font-mono text-sm font-black line-through">${v.code}</span>
+                                <span class="text-[7px] font-black uppercase text-stone-400">${v.bundleName}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSettings(container) {
+            container.innerHTML = `
+                <div class="bg-white border rounded-xl p-8 text-center space-y-6">
+                    <div class="w-16 h-16 bg-stone-50 rounded-full flex items-center justify-center mx-auto">
+                        <i data-lucide="shield" class="w-8 h-8 text-[#5d4037]"></i>
+                    </div>
+                    <h2 class="text-sm font-black uppercase">Mfumo v5.2 Stable</h2>
+                    <p class="text-[9px] text-stone-400 font-bold uppercase leading-relaxed">
+                        Data zako zimehifadhiwa salama kwenye browser yako. Ukifuta cache ya browser, data hizi zitafutika.
+                    </p>
+                    <button onclick="factoryReset()" class="w-full bg-red-50 text-red-500 py-4 rounded-xl text-[9px] font-black uppercase border border-red-100">
+                        Futa Kila Kitu (Reset)
+                    </button>
+                </div>
+            `;
+        }
+
+        function clearExpired() {
+            if(confirm("Futa kumbukumbu zote za vocha zilizopita?")) {
+                state.vouchers = state.vouchers.filter(v => v.status !== 'expired');
+                saveData();
+                render();
+            }
+        }
+
+        function factoryReset() {
+            if(confirm("Hii itafuta vocha na mauzo yote. Una uhakika?")) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        // --- 5. App Lifecycle ---
+        window.onload = () => {
+            loadData();
+            
+            // Initial render
+            document.getElementById('loader').classList.add('hidden');
+            document.getElementById('app-shell').classList.remove('hidden');
+            render();
+
+            // Setup Navigation
+            document.getElementById('nav-home').onclick = () => { state.activeTab = 'home'; render(); };
+            document.getElementById('nav-expired').onclick = () => { state.activeTab = 'expired'; render(); };
+            document.getElementById('nav-settings').onclick = () => { state.activeTab = 'settings'; render(); };
+
+            // Start Tick
+            setInterval(() => {
+                const now = Date.now();
+                let changed = false;
+                state.vouchers = state.vouchers.map(v => {
+                    if (v.status === 'active' && v.expiresAt && now > v.expiresAt) {
+                        changed = true;
+                        return { ...v, status: 'expired' };
+                    }
+                    return v;
+                });
+                if (changed) saveData();
+                if (state.activeTab === 'home') render(); // Live countdown update
+            }, 5000);
+        };
+    </script>
 </body>
 </html>
