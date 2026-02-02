@@ -9,8 +9,8 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         body {
-            background-color: #f5f4f2; /* Light Greyish White */
-            color: #443c39; /* Dark Brown Grey */
+            background-color: #f5f4f2;
+            color: #443c39;
             font-family: "Calibri", "Candara", "Segoe UI", "Optima", "Arial", sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
@@ -40,7 +40,7 @@
             bottom: 80px;
             left: 50%;
             transform: translateX(-50%);
-            background: #5d4037; /* Brown */
+            background: #5d4037;
             color: white;
             padding: 10px 20px;
             border-radius: 4px;
@@ -58,18 +58,15 @@
             border-radius: 50%;
             background: #8d6e63;
             cursor: pointer;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
-        .btn-active:active {
-            transform: scale(0.95);
-        }
+        .btn-active:active { transform: scale(0.95); }
+        .code-display:hover { color: #8d6e63; }
     </style>
 </head>
 <body class="pb-20">
 
     <div id="toast" class="copy-toast">Risiti Imenakiliwa!</div>
 
-    <!-- Loading Screen -->
     <div id="loader" class="fixed inset-0 bg-white flex items-center justify-center z-[9999]">
         <div class="text-center">
             <div class="w-10 h-10 border-4 border-[#8d6e63] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -77,7 +74,6 @@
         </div>
     </div>
 
-    <!-- App Shell -->
     <div id="app-shell" class="hidden">
         <header class="bg-white border-b-2 border-stone-200 sticky top-0 z-50">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -96,14 +92,15 @@
         </header>
 
         <main id="main-content" class="max-w-md mx-auto p-4 space-y-6">
-            <!-- JS Injected Content -->
+            <!-- Content injected by JS -->
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'hotspot_mtaani_v10_sync';
+        const STORAGE_KEY = 'hotspot_mtaani_v11_sequential';
+        const SEQ_KEY = 'hotspot_mtaani_pointer';
         const PORTAL_URL = 'https://japhet-1234.github.io/hotspotmtaani/';
-        const SHARED_ENDPOINT = 'https://api.example.com/vouchers/sync'; // Placeholder URL
+        const SHARED_ENDPOINT = 'https://api.example.com/vouchers/sync';
 
         const BUNDLES = [
             { id: 'b1', name: 'SAA 1 (High Speed)', price: 200, minutes: 60 },
@@ -117,21 +114,29 @@
             activeTab: 'home',
             selectedBundleId: 'b1',
             batchSize: 5,
-            isSyncing: false
+            isSyncing: false,
+            pointer: { p: 0, n: 1, s: 0 }
         };
 
         function loadData() {
             try {
                 const data = localStorage.getItem(STORAGE_KEY);
                 if (data) state.vouchers = JSON.parse(data) || [];
-            } catch (e) { state.vouchers = []; }
+                const ptr = localStorage.getItem(SEQ_KEY);
+                if (ptr) state.pointer = JSON.parse(ptr);
+            } catch (e) { 
+                state.vouchers = []; 
+                state.pointer = { p: 0, n: 1, s: 0 };
+            }
         }
 
         function saveData() {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.vouchers)); } catch (e) {}
+            try { 
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state.vouchers)); 
+                localStorage.setItem(SEQ_KEY, JSON.stringify(state.pointer));
+            } catch (e) {}
         }
 
-        // --- Hashing Utility ---
         async function generateSHA256(text) {
             const msgBuffer = new TextEncoder().encode(text);
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -139,102 +144,98 @@
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        // --- Shared Database Push ---
         async function pushToSharedDatabase(voucherArray) {
-            console.log("Pushing JSON data to Shared Endpoint...", voucherArray);
+            console.log("Pushing JSON to Shared Database...", voucherArray);
             state.isSyncing = true;
             render();
-            
-            // Simulating API call
             try {
-                // In production: await fetch(SHARED_ENDPOINT, { method: 'POST', body: JSON.stringify(voucherArray) });
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                console.log("Successfully pushed to Shared Database.");
-            } catch (err) {
-                console.error("Failed to push to Shared Database:", err);
+                await new Promise(r => setTimeout(r, 800));
             } finally {
                 state.isSyncing = false;
                 render();
             }
         }
 
-        function generateCode() {
-            const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-            let res = '';
-            for (let i = 0; i < 4; i++) res += chars.charAt(Math.floor(Math.random() * chars.length));
-            return `HM-${res}`;
-        }
+        function getNextCode() {
+            const prefix = String.fromCharCode(65 + state.pointer.p); 
+            const num = String(state.pointer.n).padStart(4, '0'); 
+            const suffix = String.fromCharCode(97 + state.pointer.s); 
+            const code = `${prefix}-${num}${suffix}`;
 
-        function showToast(msg) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.style.display = 'block';
-            setTimeout(() => { t.style.display = 'none'; }, 2000);
-        }
-
-        async function copyFullReceipt(id) {
-            const v = state.vouchers.find(x => x.id === id);
-            if (!v) return;
-            const receiptText = `--- HOTSPOT MTAANI ---\nRISITI YA VOCHA\n----------------------\nKODI: ${v.code}\nMUDA: ${v.bundleName}\nBEI : Tzs ${v.price.toLocaleString()}\n----------------------\nPORTAL: ${PORTAL_URL}\n----------------------\nID: ${v.voucher_id}\nASANTE KWA KUCHAGUA MTAANI!`;
-            try {
-                await navigator.clipboard.writeText(receiptText);
-                showToast("IMENAKILIWA!");
-            } catch (err) {
-                showToast("KOSA LA KUNAKILI!");
+            state.pointer.s++;
+            if (state.pointer.s > 25) {
+                state.pointer.s = 0;
+                state.pointer.n++;
             }
+            if (state.pointer.n > 9999) {
+                state.pointer.n = 1;
+                state.pointer.p++;
+            }
+            if (state.pointer.p > 25) {
+                state.pointer.p = 0; 
+            }
+            return code;
         }
 
         async function createBatch() {
             const bundle = BUNDLES.find(b => b.id === state.selectedBundleId);
             if (!bundle) return;
-            
             const newVouchers = [];
             const syncPayload = [];
-
             for (let i = 0; i < state.batchSize; i++) {
-                const vid = Math.random().toString(36).substr(2, 9).toUpperCase();
-                const code = generateCode();
+                const code = getNextCode();
+                const alreadyUsed = state.vouchers.some(v => v.code === code);
+                if (alreadyUsed) { i--; continue; }
+                const vid = "V-" + Math.random().toString(36).substr(2, 6).toUpperCase();
                 const hash = await generateSHA256(vid + code);
-                
-                // State object
                 const vObj = {
                     id: vid,
-                    voucher_id: vid, // Required JSON key
-                    amount: bundle.price, // Required JSON key
-                    hash_key: hash, // Required JSON key (SHA-256)
+                    voucher_id: vid,
+                    amount: bundle.price,
+                    hash_key: hash,
                     code: code,
                     bundleName: bundle.name,
                     duration: bundle.minutes,
                     price: bundle.price,
                     status: 'available',
-                    createdAt: Date.now(),
-                    activatedAt: null,
-                    expiresAt: null
+                    createdAt: Date.now()
                 };
-
                 newVouchers.push(vObj);
-                
-                // Payload for Shared Endpoint
                 syncPayload.push({
                     voucher_id: vObj.voucher_id,
                     amount: vObj.amount,
                     hash_key: vObj.hash_key
                 });
             }
-
             state.vouchers = [...state.vouchers, ...newVouchers];
             saveData();
             render();
-            
-            // Immediate Push to Shared Database
             pushToSharedDatabase(syncPayload);
+        }
+
+        async function copyVoucher(id) {
+            const v = state.vouchers.find(x => x.id === id);
+            if (!v) return;
+            const receiptText = `--- HOTSPOT MTAANI ---\nRISITI YA VOCHA\n----------------------\nKODI: ${v.code}\nMUDA: ${v.bundleName}\nBEI: Tzs ${v.price.toLocaleString()}\n----------------------\nPORTAL: ${PORTAL_URL}\n----------------------\nID: ${v.voucher_id}\nASANTE KWA KUCHAGUA MTAANI!`;
+            try {
+                await navigator.clipboard.writeText(receiptText);
+                showToast("IMENAKILIWA!");
+            } catch (err) {
+                const el = document.createElement('textarea');
+                el.value = receiptText;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                showToast("IMENAKILIWA!");
+            }
         }
 
         async function activateAndOpen(id) {
             const v = state.vouchers.find(x => x.id === id);
             if (!v) return;
-            if (confirm(`Je, unataka kuanzisha vocha ${v.code}?`)) {
-                await copyFullReceipt(id);
+            if (confirm(`Kuanzisha vocha ${v.code}?`)) {
+                await copyVoucher(id);
                 const now = Date.now();
                 state.vouchers = state.vouchers.map(x => x.id === id ? {
                     ...x,
@@ -249,7 +250,7 @@
         }
 
         function deleteVoucher(id) {
-            if (confirm("Futa hii vocha kabisa?")) {
+            if (confirm("Futa vocha hii?")) {
                 state.vouchers = state.vouchers.filter(v => v.id !== id);
                 saveData();
                 render();
@@ -266,22 +267,22 @@
             return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
         }
 
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 2000);
+        }
+
         function render() {
             const container = document.getElementById('main-content');
             if (!container) return;
-
-            ['nav-home', 'nav-expired', 'nav-settings'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    if (id.includes(state.activeTab)) el.classList.add('active-tab');
-                    else el.classList.remove('active-tab');
-                }
-            });
-
+            document.getElementById('nav-home').className = `text-[10px] font-bold uppercase tracking-widest px-1 ${state.activeTab==='home'?'active-tab':'text-stone-400'}`;
+            document.getElementById('nav-expired').className = `text-[10px] font-bold uppercase tracking-widest px-1 ${state.activeTab==='expired'?'active-tab':'text-stone-400'}`;
+            document.getElementById('nav-settings').className = `text-[10px] font-bold uppercase tracking-widest px-1 ${state.activeTab==='settings'?'active-tab':'text-stone-400'}`;
             if (state.activeTab === 'home') renderHome(container);
             else if (state.activeTab === 'expired') renderExpired(container);
             else renderSettings(container);
-
             if (window.lucide) window.lucide.createIcons();
         }
 
@@ -289,11 +290,10 @@
             const available = state.vouchers.filter(v => v.status === 'available');
             const active = state.vouchers.filter(v => v.status === 'active');
             const revenue = state.vouchers.filter(v => v.status !== 'available').reduce((s, v) => s + (v.price || 0), 0);
-
             container.innerHTML = `
                 <div class="flex justify-between items-end border-b border-stone-300 pb-3">
                     <div>
-                        <p class="text-[10px] font-bold text-stone-400 uppercase">Stock Iliyopo</p>
+                        <p class="text-[10px] font-bold text-stone-400 uppercase">Vocha Mpya</p>
                         <h2 class="text-3xl font-bold text-[#5d4037]">${available.length}</h2>
                     </div>
                     <div class="text-right">
@@ -301,10 +301,9 @@
                         <h2 class="text-xl font-bold text-[#8d6e63]">${revenue.toLocaleString()} TZS</h2>
                     </div>
                 </div>
-
                 <div class="bg-stone-200 p-5 rounded-xl border border-stone-300 space-y-4 shadow-sm relative">
                     ${state.isSyncing ? `<div class="absolute top-2 right-2 flex items-center gap-1"><div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span class="text-[8px] font-bold text-green-600 uppercase">Syncing...</span></div>` : ''}
-                    <p class="text-[11px] font-bold uppercase tracking-wide text-[#5d4037]">Tengeneza Vocha & Sync</p>
+                    <p class="text-[11px] font-bold uppercase tracking-wide text-[#5d4037]">Mfululizo: ${String.fromCharCode(65+state.pointer.p)}-${String(state.pointer.n).padStart(4,'0')}${String.fromCharCode(97+state.pointer.s)}</p>
                     <select id="bundle-sel" class="w-full bg-white border-2 border-stone-300 p-3 text-sm font-bold rounded-lg outline-none focus:border-[#8d6e63]">
                         ${BUNDLES.map(b => `<option value="${b.id}" ${state.selectedBundleId === b.id ? 'selected' : ''}>${b.name} - ${b.price}Tzs</option>`).join('')}
                     </select>
@@ -312,49 +311,47 @@
                         <input id="batch-range" type="range" min="1" max="20" value="${state.batchSize}" class="flex-grow h-2 bg-stone-300 rounded appearance-none cursor-pointer">
                         <span class="text-sm font-bold text-[#5d4037] w-6" id="range-val">${state.batchSize}</span>
                     </div>
-                    <button onclick="createBatch()" class="w-full bg-[#5d4037] text-white font-bold py-3.5 rounded-xl text-[12px] uppercase tracking-widest shadow-lg btn-active transition-all">Chapisha & Sukuma Data</button>
+                    <button onclick="createBatch()" class="w-full bg-[#5d4037] text-white font-bold py-3.5 rounded-xl text-[12px] uppercase tracking-widest shadow-lg btn-active transition-all">Chapisha kwa Mfululizo</button>
                 </div>
-
                 <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-stone-400 uppercase tracking-widest border-b border-stone-200 pb-1">Wateja Hewani (${active.length})</p>
-                    ${active.length === 0 ? '<p class="text-center py-4 text-stone-300 text-[11px] italic">Hakuna mteja...</p>' : 
+                    <p class="text-[10px] font-bold text-stone-400 uppercase border-b border-stone-200 pb-1">Zinazotumika (${active.length})</p>
+                    ${active.length === 0 ? '<p class="text-center py-4 text-stone-300 text-[11px] italic">Zilizotumika zitaonekana hapa...</p>' : 
                     active.map(v => `
-                        <div class="bg-white border-l-4 border-[#8d6e63] p-4 flex justify-between items-center shadow-sm rounded-r-lg" onclick="copyFullReceipt('${v.id}')">
+                        <div class="bg-white border-l-4 border-[#8d6e63] p-4 flex justify-between items-center shadow-sm rounded-r-lg cursor-pointer hover:bg-stone-50 transition-colors" onclick="copyVoucher('${v.id}')">
                             <div>
                                 <p class="text-xl font-bold text-[#5d4037] tracking-wider">${v.code}</p>
                                 <p class="text-[9px] text-stone-400 font-bold uppercase">${v.bundleName}</p>
                             </div>
                             <div class="text-right">
                                 <p class="text-sm font-bold text-[#8d6e63]">${getTimeLeft(v.expiresAt)}</p>
-                                <p class="text-[8px] text-stone-300 uppercase">Baki</p>
+                                <p class="text-[8px] text-stone-300 uppercase">Bakia</p>
                             </div>
                         </div>
                     `).join('')}
                 </div>
-
                 <div class="space-y-5">
-                    <p class="text-[10px] font-bold text-stone-400 uppercase tracking-widest border-b border-stone-200 pb-1">Stock (${available.length})</p>
+                    <p class="text-[10px] font-bold text-stone-400 uppercase border-b border-stone-200 pb-1">Stock Iliyopo (${available.length})</p>
                     <div class="space-y-8">
-                        ${available.length === 0 ? '<p class="text-center py-10 text-stone-300 text-[11px] italic uppercase">Weka vocha hapo juu</p>' : 
+                        ${available.length === 0 ? '<p class="text-center py-10 text-stone-300 text-[11px] italic uppercase">Hamna vocha mpya</p>' : 
                         available.map(v => `
                             <div class="receipt-card space-y-4">
                                 <div class="text-center border-b border-dashed border-stone-200 pb-4">
                                     <h3 class="text-sm font-bold tracking-tight text-[#5d4037]">HOTSPOT MTAANI</h3>
-                                    <p class="text-[7px] text-stone-400 break-all font-mono">HASH: ${v.hash_key.substring(0, 16)}...</p>
+                                    <p class="text-[7px] text-stone-400 font-mono">HASH: ${v.hash_key.substring(0, 16)}...</p>
                                 </div>
                                 <div class="py-2 flex flex-col items-center">
-                                    <p class="text-[10px] font-bold text-stone-300 uppercase">Kodi</p>
-                                    <button onclick="copyFullReceipt('${v.id}')" class="text-3xl font-bold tracking-[0.1em] text-[#5d4037] hover:text-[#8d6e63] transition-all">
+                                    <p class="text-[10px] font-bold text-stone-300 uppercase">Kodi ya Vocha (Bofya Kunakili)</p>
+                                    <div onclick="copyVoucher('${v.id}')" class="text-3xl font-bold tracking-[0.1em] text-[#5d4037] cursor-pointer code-display transition-colors">
                                         ${v.code}
-                                    </button>
+                                    </div>
                                     <p class="text-[11px] font-bold text-stone-600 mt-1 uppercase">${v.bundleName}</p>
                                 </div>
                                 <div class="border-t border-dashed border-stone-200 pt-4 flex justify-between items-center">
-                                    <button onclick="deleteVoucher('${v.id}')" class="text-stone-300 hover:text-red-400 transition-colors p-1">
+                                    <button onclick="deleteVoucher('${v.id}')" class="text-stone-300 hover:text-red-400 p-1">
                                         <i data-lucide="trash-2" class="w-5 h-5"></i>
                                     </button>
-                                    <button onclick="activateAndOpen('${v.id}')" class="bg-[#8d6e63] text-white text-[10px] font-bold px-5 py-2.5 rounded-lg uppercase tracking-wide shadow btn-active">
-                                        Fungua
+                                    <button onclick="activateAndOpen('${v.id}')" class="bg-[#8d6e63] text-white text-[10px] font-bold px-5 py-2.5 rounded-lg uppercase shadow btn-active">
+                                        Fungua Portal
                                     </button>
                                 </div>
                             </div>
@@ -362,7 +359,6 @@
                     </div>
                 </div>
             `;
-
             document.getElementById('bundle-sel').onchange = (e) => state.selectedBundleId = e.target.value;
             document.getElementById('batch-range').oninput = (e) => {
                 state.batchSize = e.target.value;
@@ -375,18 +371,18 @@
             container.innerHTML = `
                 <div class="bg-white border-2 border-stone-200 rounded-xl overflow-hidden shadow-sm">
                     <div class="p-4 bg-stone-100 border-b-2 border-stone-200 flex justify-between items-center">
-                        <h2 class="text-[11px] font-bold uppercase tracking-widest text-[#5d4037]">Historia</h2>
-                        <button onclick="clearExpired()" class="text-[#8d6e63] text-[11px] font-bold uppercase hover:underline">Futa</button>
+                        <h2 class="text-[11px] font-bold uppercase tracking-widest text-[#5d4037]">Zilizotumika / Zilizoisha</h2>
+                        <button onclick="clearExpired()" class="text-[#8d6e63] text-[11px] font-bold uppercase hover:underline">Futa Zote</button>
                     </div>
                     <div class="divide-y divide-stone-50">
-                        ${expired.length === 0 ? '<p class="p-12 text-center text-stone-300 text-[11px] italic">Hakuna...</p>' : 
+                        ${expired.length === 0 ? '<p class="p-12 text-center text-stone-300 text-[11px] italic">Historia ni safi...</p>' : 
                         expired.map(v => `
                             <div class="p-4 flex justify-between items-center opacity-40 grayscale">
                                 <div>
                                     <span class="text-base font-bold line-through text-stone-800">${v.code}</span>
                                     <p class="text-[8px] font-bold uppercase text-stone-500">${v.bundleName}</p>
                                 </div>
-                                <span class="text-[9px] font-bold text-stone-400 uppercase">Imeisha</span>
+                                <span class="text-[9px] font-bold text-stone-400 uppercase">Imetumika</span>
                             </div>
                         `).join('')}
                     </div>
@@ -398,28 +394,28 @@
             container.innerHTML = `
                 <div class="bg-white border-2 border-stone-200 p-8 text-center space-y-6 rounded-xl shadow-sm">
                     <div class="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto text-[#5d4037]">
-                        <i data-lucide="database" class="w-8 h-8"></i>
+                        <i data-lucide="layers" class="w-8 h-8"></i>
                     </div>
-                    <h2 class="text-sm font-bold uppercase tracking-widest text-[#5d4037]">MTAANI SYNC ENGINE</h2>
+                    <h2 class="text-sm font-bold uppercase tracking-widest text-[#5d4037]">SEQUENTIAL ENGINE v11</h2>
                     <div class="text-left bg-stone-50 p-5 space-y-3 border border-stone-200 rounded-lg">
-                        <div class="flex flex-col text-[10px] gap-1">
-                            <span class="font-bold text-stone-400 uppercase">Endpoint:</span>
-                            <span class="font-mono text-[9px] text-blue-600 truncate">${SHARED_ENDPOINT}</span>
+                        <div class="flex justify-between items-center text-[10px]">
+                            <span class="font-bold text-stone-400 uppercase">Next Code:</span>
+                            <span class="font-bold text-[#5d4037]">${String.fromCharCode(65+state.pointer.p)}-${String(state.pointer.n).padStart(4,'0')}${String.fromCharCode(97+state.pointer.s)}</span>
                         </div>
                         <div class="flex justify-between items-center text-[10px]">
-                            <span class="font-bold text-stone-400 uppercase">Format:</span>
-                            <span class="font-bold text-[#5d4037]">JSON (ID/AMT/HASH)</span>
+                            <span class="font-bold text-stone-400 uppercase">Duplicate Shield:</span>
+                            <span class="text-green-600 font-bold uppercase">Active</span>
                         </div>
                     </div>
                     <button onclick="factoryReset()" class="w-full bg-stone-100 text-stone-400 py-4 rounded-xl font-bold text-[11px] uppercase tracking-widest border border-stone-200 hover:bg-red-50 hover:text-red-400 btn-active transition-all">
-                        Factory Reset
+                        Reset All Counters
                     </button>
                 </div>
             `;
         }
 
         function clearExpired() {
-            if(confirm("Futa historia?")) {
+            if(confirm("Futa historia yote?")) {
                 state.vouchers = state.vouchers.filter(v => v.status !== 'expired');
                 saveData();
                 render();
@@ -427,7 +423,7 @@
         }
 
         function factoryReset() {
-            if(confirm("ONYO: Futa kila kitu?")) {
+            if(confirm("Hii itafuta data zote na kuanza upya na A-0001a. Je, una uhakika?")) {
                 localStorage.clear();
                 location.reload();
             }
@@ -438,11 +434,9 @@
             document.getElementById('loader').style.display = 'none';
             document.getElementById('app-shell').classList.remove('hidden');
             render();
-
             document.getElementById('nav-home').onclick = () => { state.activeTab = 'home'; render(); };
             document.getElementById('nav-expired').onclick = () => { state.activeTab = 'expired'; render(); };
             document.getElementById('nav-settings').onclick = () => { state.activeTab = 'settings'; render(); };
-
             setInterval(() => {
                 const now = Date.now();
                 let changed = false;
@@ -453,8 +447,7 @@
                     }
                     return v;
                 });
-                if (changed) saveData();
-                if (state.activeTab === 'home') render(); 
+                if (changed) { saveData(); render(); }
             }, 5000);
         };
     </script>
