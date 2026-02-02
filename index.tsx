@@ -1,333 +1,362 @@
 
-// Add global declaration for lucide icons
-declare const lucide: any;
+// --- Hotspot Mtaani Management Logic ---
 
-// --- Configuration & State ---
-const STORAGE_KEY_VOUCHERS = 'hotspot_mtaani_vouchers_v3';
-const STORAGE_KEY_BUNDLES = 'hotspot_mtaani_bundles_v3';
+const STORAGE_KEY = 'hotspot_mtaani_data_v4';
 
-const DEFAULT_BUNDLES = [
-  { id: '1', name: '6 HOURS UNLIMITED', price: 500 },
-  { id: '2', name: '24 HOURS UNLIMITED', price: 1000 },
-  { id: '3', name: '3 DAYS UNLIMITED', price: 2000 },
-  { id: '4', name: '7 DAYS UNLIMITED', price: 5000 },
+// Default Bundles with duration in Minutes
+const BUNDLES = [
+    { id: 'b1', name: 'Saa 6 Unlimited', price: 500, minutes: 360 },
+    { id: 'b2', name: 'Saa 24 Unlimited', price: 1000, minutes: 1440 },
+    { id: 'b3', name: 'Siku 3 Unlimited', price: 2000, minutes: 4320 },
+    { id: 'b4', name: 'Wiki 1 Unlimited', price: 5000, minutes: 10080 }
 ];
 
 let state = {
-  vouchers: JSON.parse(localStorage.getItem(STORAGE_KEY_VOUCHERS) || '[]'),
-  bundles: JSON.parse(localStorage.getItem(STORAGE_KEY_BUNDLES) || JSON.stringify(DEFAULT_BUNDLES)),
-  activeTab: 'main',
-  batchCount: 10,
-  selectedBundleId: '1',
-  copiedId: null
+    vouchers: [] as any[],
+    activeTab: 'home',
+    selectedBundleId: 'b1',
+    batchSize: 10,
+    copiedId: null as string | null
 };
 
-// --- Core Logic ---
-
-const saveState = () => {
-  localStorage.setItem(STORAGE_KEY_VOUCHERS, JSON.stringify(state.vouchers));
-  localStorage.setItem(STORAGE_KEY_BUNDLES, JSON.stringify(state.bundles));
+// --- Initialization ---
+const init = () => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+        state.vouchers = JSON.parse(saved);
+    }
+    
+    // Start the timer to update UI for active vouchers every minute
+    setInterval(updateExpiries, 30000); 
+    render();
 };
 
-const generateId = () => {
-  return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+const save = () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.vouchers));
 };
+
+// --- Core Actions ---
 
 const generateVoucherCode = () => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let randomPart = '';
-  for (let i = 0; i < 4; i++) {
-    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `HM-${randomPart}`; // Identity Prefix
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let code = '';
+    for (let i = 0; i < 4; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `HM-${code}`;
 };
 
-const createBatch = () => {
-  const bundle = state.bundles.find(b => b.id === state.selectedBundleId);
-  if (!bundle) return;
-  
-  const newVouchers = Array.from({ length: state.batchCount }, () => ({
-    id: generateId(),
-    code: generateVoucherCode(),
-    bundleId: bundle.id,
-    bundleName: bundle.name,
-    createdAt: Date.now(),
-    status: 'Available'
-  }));
-
-  state.vouchers = [...state.vouchers, ...newVouchers];
-  saveState();
-  render();
-};
-
-const deleteVoucher = (id) => {
-  state.vouchers = state.vouchers.filter(v => v.id !== id);
-  saveState();
-  render();
-};
-
-const clearUsed = () => {
-  if (confirm("Je, unataka kufuta vocha zote zilizotumika?")) {
-    state.vouchers = state.vouchers.filter(v => v.status === 'Available');
-    saveState();
-    render();
-  }
-};
-
-const handleVoucherClick = async (id, code, currentStatus) => {
-  try {
-    await navigator.clipboard.writeText(code);
-    state.copiedId = id;
+const createVouchers = () => {
+    const bundle = BUNDLES.find(b => b.id === state.selectedBundleId);
+    if (!bundle) return;
+    const newItems = [];
     
-    // Auto-mark as used to track distribution
-    if (currentStatus === 'Available') {
-      state.vouchers = state.vouchers.map(v => 
-        v.id === id ? { ...v, status: 'Used' } : v
-      );
+    for (let i = 0; i < state.batchSize; i++) {
+        newItems.push({
+            id: Math.random().toString(36).substr(2, 9),
+            code: generateVoucherCode(),
+            bundleId: bundle.id,
+            bundleName: bundle.name,
+            duration: bundle.minutes,
+            status: 'available', // available, active, expired
+            createdAt: Date.now(),
+            activatedAt: null,
+            expiresAt: null
+        });
     }
     
-    saveState();
+    state.vouchers = [...state.vouchers, ...newItems];
+    save();
     render();
-    setTimeout(() => {
-      state.copiedId = null;
-      render();
-    }, 1500);
-  } catch (err) {
-    console.error('Copy failed', err);
-  }
 };
 
-// --- Rendering Engine ---
+const activateVoucher = (id: string) => {
+    state.vouchers = state.vouchers.map(v => {
+        if (v.id === id) {
+            const now = Date.now();
+            return {
+                ...v,
+                status: 'active',
+                activatedAt: now,
+                expiresAt: now + (v.duration * 60000)
+            };
+        }
+        return v;
+    });
+    save();
+    render();
+};
+
+const deleteVoucher = (id: string) => {
+    if (confirm("Futa hii vocha?")) {
+        state.vouchers = state.vouchers.filter(v => v.id !== id);
+        save();
+        render();
+    }
+};
+
+const updateExpiries = () => {
+    const now = Date.now();
+    let changed = false;
+    
+    state.vouchers = state.vouchers.map(v => {
+        if (v.status === 'active' && v.expiresAt && now > v.expiresAt) {
+            changed = true;
+            return { ...v, status: 'expired' };
+        }
+        return v;
+    });
+    
+    if (changed) {
+        save();
+        render();
+    }
+};
+
+// --- UI Helpers ---
+
+const formatTimeLeft = (expiresAt: number) => {
+    const diff = expiresAt - Date.now();
+    if (diff <= 0) return "Expired";
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        return `${days}d ${hours % 24}h remaining`;
+    }
+    return `${hours}h ${mins}m remaining`;
+};
+
+// --- Rendering ---
 
 const render = () => {
-  const root = document.getElementById('content-root');
-  const printRoot = document.getElementById('print-root');
-  if (!root || !printRoot) return;
+    const container = document.getElementById('main-content');
+    const printContainer = document.getElementById('print-layout');
+    
+    if (!container || !printContainer) return;
 
-  // Calculate Stats
-  const available = state.vouchers.filter(v => v.status === 'Available').length;
-  const used = state.vouchers.filter(v => v.status === 'Used').length;
-  const revenue = state.vouchers.reduce((acc, v) => {
-    const b = state.bundles.find(bn => bn.id === v.bundleId);
-    return v.status === 'Used' ? acc + (b?.price || 0) : acc;
-  }, 0);
-
-  // Nav UI
-  const navDashboard = document.getElementById('nav-dashboard');
-  if (navDashboard) navDashboard.className = `text-[10px] font-black uppercase tracking-widest ${state.activeTab === 'main' ? 'text-[#5d4037]' : 'text-stone-400 hover:text-stone-600'}`;
-  
-  const navSettings = document.getElementById('nav-settings');
-  if (navSettings) navSettings.className = `text-[10px] font-black uppercase tracking-widest ${state.activeTab === 'settings' ? 'text-[#5d4037]' : 'text-stone-400 hover:text-stone-600'}`;
-
-  if (state.activeTab === 'main') {
-    root.innerHTML = `
-      <!-- Stats Row -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="bg-white border border-stone-200 p-5 rounded-xl shadow-sm">
-          <p class="text-[9px] font-black text-stone-400 uppercase tracking-widest mb-1">Vocha Zilizopo</p>
-          <div class="flex items-end justify-between">
-            <p class="text-3xl font-black text-stone-800">${available}</p>
-            <i data-lucide="ticket" class="w-5 h-5 text-stone-200"></i>
-          </div>
-        </div>
-        <div class="bg-white border border-stone-200 p-5 rounded-xl shadow-sm">
-          <p class="text-[9px] font-black text-stone-400 uppercase tracking-widest mb-1">Zilizotumika</p>
-          <div class="flex items-end justify-between">
-            <p class="text-3xl font-black text-[#8d6e63]">${used}</p>
-            <i data-lucide="check-circle" class="w-5 h-5 text-[#8d6e63]/20"></i>
-          </div>
-        </div>
-        <div class="bg-white border border-stone-200 p-5 rounded-xl shadow-sm">
-          <p class="text-[9px] font-black text-stone-400 uppercase tracking-widest mb-1">Mapato (Tzs)</p>
-          <div class="flex items-end justify-between">
-            <p class="text-3xl font-black text-stone-800">${revenue.toLocaleString()}</p>
-            <i data-lucide="banknote" class="w-5 h-5 text-stone-200"></i>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Control Panel -->
-        <div class="lg:col-span-4 space-y-4">
-          <div class="bg-[#3d2b1f] text-white p-6 rounded-2xl shadow-xl border border-[#2d1f16]">
-            <h3 class="text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2">
-              <i data-lucide="zap" class="w-4 h-4 text-[#8d6e63]"></i> Jenereta ya Vocha
-            </h3>
-            <div class="space-y-5">
-              <div class="space-y-1.5">
-                <label class="text-[9px] font-bold text-stone-400 uppercase">Aina ya Kifurushi</label>
-                <select id="bundle-select" class="w-full bg-[#2d1f16] border border-stone-800 p-3 text-xs rounded-lg font-bold outline-none focus:border-[#8d6e63] transition-colors">
-                  ${state.bundles.map(b => `<option value="${b.id}" ${state.selectedBundleId === b.id ? 'selected' : ''}>${b.name} - ${b.price} Tzs</option>`).join('')}
-                </select>
-              </div>
-              <div class="space-y-1.5">
-                <label class="text-[9px] font-bold text-stone-400 uppercase">Idadi: <span id="batch-count-display">${state.batchCount}</span></label>
-                <input id="batch-slider" type="range" min="1" max="50" value="${state.batchCount}" class="w-full h-1.5 bg-stone-800 rounded-lg appearance-none cursor-pointer accent-[#8d6e63]">
-              </div>
-              <button id="btn-generate" class="w-full bg-[#8d6e63] hover:bg-[#a18276] text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-[0.97]">
-                Tengeneza Vocha
-              </button>
-            </div>
-          </div>
-
-          <div class="bg-white border border-stone-200 p-5 rounded-2xl space-y-3 shadow-sm">
-            <h3 class="text-[9px] font-black uppercase tracking-widest text-stone-400">Quick Actions</h3>
-            <button onclick="window.print()" class="w-full text-left p-4 text-xs font-bold border border-stone-50 rounded-xl hover:bg-stone-50 transition flex items-center justify-between">
-              <span>Print Vocha Zilizopo</span>
-              <i data-lucide="printer" class="w-4 h-4"></i>
-            </button>
-            <button id="btn-clear" class="w-full text-left p-4 text-xs font-bold border border-stone-50 rounded-xl hover:bg-red-50 transition flex items-center justify-between text-red-500">
-              <span>Safisha Kumbukumbu</span>
-              <i data-lucide="trash-2" class="w-4 h-4"></i>
-            </button>
-          </div>
-        </div>
-
-        <!-- Data Logs -->
-        <div class="lg:col-span-8 bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-sm">
-          <div class="p-4 border-b border-stone-100 bg-stone-50/50 flex justify-between items-center">
-            <h3 class="text-[10px] font-black uppercase tracking-widest">Kumbukumbu (Logs)</h3>
-            <div class="flex items-center gap-2">
-               <span class="text-[9px] font-bold text-stone-400 bg-white border border-stone-200 px-2 py-1 rounded-full">${state.vouchers.length} Jumla</span>
-            </div>
-          </div>
-          <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table class="w-full text-[11px] text-left border-collapse">
-              <thead class="bg-white sticky top-0 border-b border-stone-100 z-10 shadow-sm">
-                <tr>
-                  <th class="px-6 py-4 font-black uppercase tracking-tighter text-stone-400">Kodi (Bofya Nakili)</th>
-                  <th class="px-6 py-4 font-black uppercase tracking-tighter text-stone-400">Kifurushi</th>
-                  <th class="px-6 py-4 font-black uppercase tracking-tighter text-stone-400">Hali</th>
-                  <th class="px-6 py-4 text-right"></th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-stone-50">
-                ${[...state.vouchers].reverse().map(v => `
-                  <tr class="hover:bg-stone-50/30 group transition-colors">
-                    <td 
-                      onclick="window.app.handleVoucherClick('${v.id}', '${v.code}', '${v.status}')"
-                      class="px-6 py-4 font-mono font-black text-stone-800 tracking-widest cursor-pointer relative"
-                    >
-                      <span class="group-hover:text-[#8d6e63] underline decoration-stone-200 group-hover:decoration-[#8d6e63] transition-all">${v.code}</span>
-                      ${state.copiedId === v.id ? `<span class="absolute left-6 -top-1 bg-stone-900 text-white text-[7px] px-1.5 py-0.5 rounded shadow-xl copied-badge z-20">COPIED!</span>` : ''}
-                    </td>
-                    <td class="px-6 py-4 text-stone-500 font-bold uppercase text-[9px]">${v.bundleName}</td>
-                    <td class="px-6 py-4">
-                      <span class="text-[8px] font-black px-2.5 py-1 rounded-full uppercase ${
-                        v.status === 'Available' ? 'bg-green-50 text-green-600 border border-green-100' :
-                        'bg-stone-100 text-stone-400 line-through'
-                      }">
-                        ${v.status === 'Available' ? 'Ipo' : 'Tayari'}
-                      </span>
-                    </td>
-                    <td class="px-6 py-4 text-right">
-                      <button onclick="window.app.deleteVoucher('${v.id}')" class="text-stone-300 hover:text-red-500 transition-colors p-1.5 hover:bg-red-50 rounded-lg">
-                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                      </button>
-                    </td>
-                  </tr>
-                `).join('')}
-                ${state.vouchers.length === 0 ? '<tr><td colspan="4" class="p-20 text-center text-stone-300 font-bold italic uppercase text-[10px] tracking-widest">Hakuna data kwa sasa</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <footer class="text-center pt-10 no-print">
-        <p class="text-[9px] font-bold text-stone-400 uppercase tracking-[0.2em]">Mali ya Hotspot Mtaani System</p>
-        <p class="text-[7px] text-stone-300 font-mono mt-1">Version 3.0.1 Stable</p>
-      </footer>
-    `;
-  } else {
-    root.innerHTML = `
-      <div class="bg-white border border-stone-200 p-12 rounded-3xl max-w-xl mx-auto shadow-sm text-center">
-        <div class="bg-stone-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <i data-lucide="settings" class="w-8 h-8 text-stone-400"></i>
-        </div>
-        <h2 class="text-lg font-black uppercase tracking-widest mb-2">Mpangilio wa Mfumo</h2>
-        <p class="text-xs text-stone-400 mb-10">Unganisha mfumo huu na Seva yako ya Mikrotik</p>
-        
-        <div class="space-y-8 text-left">
-          <div class="space-y-3">
-            <label class="text-[9px] font-black text-stone-400 uppercase tracking-widest">Mikrotik Landing Identity</label>
-            <div class="p-4 bg-stone-50 border border-stone-100 rounded-xl text-[11px] font-mono text-stone-600 break-all leading-relaxed shadow-inner">
-              https://japhet-1234.github.io/hotspotmtaani/
-            </div>
-            <p class="text-[8px] text-stone-400 italic">Tumia link hii kwenye mfumo wa Login kuitambua Identity ya Vocha.</p>
-          </div>
-
-          <div class="pt-8 border-t border-stone-100">
-            <button id="btn-reset" class="w-full text-red-500 font-black text-[10px] uppercase tracking-widest border-2 border-red-50 py-4 rounded-xl hover:bg-red-50 hover:border-red-100 transition-all flex items-center justify-center gap-2">
-              <i data-lucide="alert-triangle" class="w-4 h-4"></i> Futa Data Zote (Reset)
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // Generate Print Layout
-  printRoot.innerHTML = `
-    <div class="grid grid-cols-3 gap-4">
-      ${state.vouchers.filter(v => v.status === 'Available').map(v => `
-        <div class="voucher-card p-4 text-center rounded-none flex flex-col items-center">
-          <p class="text-[9px] font-black border-b-2 border-black w-full mb-3 pb-1 uppercase tracking-tighter">HOTSPOT MTAANI</p>
-          <p class="text-[7px] font-bold text-stone-600 mb-1 uppercase">CODE:</p>
-          <h4 class="text-2xl font-mono font-black tracking-[0.2em] mb-2">${v.code}</h4>
-          <div class="w-full bg-black text-white py-1 px-2 text-[8px] font-black uppercase tracking-widest mb-1">
-            ${v.bundleName}
-          </div>
-          <p class="text-[6px] text-stone-400 mt-1 italic">Ingiza kodi hii kwenye login page ya mtaani.</p>
-        </div>
-      `).join('')}
-    </div>
-  `;
-
-  attachListeners();
-  // Fix for Error: Cannot find name 'lucide'.
-  lucide.createIcons();
-};
-
-const attachListeners = () => {
-  document.getElementById('nav-dashboard')?.addEventListener('click', () => { state.activeTab = 'main'; render(); });
-  document.getElementById('nav-settings')?.addEventListener('click', () => { state.activeTab = 'settings'; render(); });
-
-  const bundleSelect = document.getElementById('bundle-select');
-  if (bundleSelect) {
-    bundleSelect.addEventListener('change', (e) => { 
-      // Fix for Error: Property 'value' does not exist on type 'EventTarget'.
-      state.selectedBundleId = (e.target as HTMLSelectElement).value; 
-    });
-  }
-
-  const batchSlider = document.getElementById('batch-slider');
-  if (batchSlider) {
-    batchSlider.addEventListener('input', (e) => {
-      // Fix for Error: Property 'value' does not exist on type 'EventTarget'.
-      state.batchCount = parseInt((e.target as HTMLInputElement).value);
-      const display = document.getElementById('batch-count-display');
-      // Fix for Error: Type 'number' is not assignable to type 'string'.
-      if (display) display.innerText = state.batchCount.toString();
-    });
-  }
-
-  document.getElementById('btn-generate')?.addEventListener('click', createBatch);
-  document.getElementById('btn-clear')?.addEventListener('click', clearUsed);
-  document.getElementById('btn-reset')?.addEventListener('click', () => {
-    if (confirm("ONYO: Kitendo hiki kitafuta vocha zote! Una uhakika?")) {
-      localStorage.clear();
-      window.location.reload();
+    if (state.activeTab === 'home') {
+        renderHome(container);
+    } else if (state.activeTab === 'expired') {
+        renderExpired(container);
+    } else {
+        renderSettings(container);
     }
-  });
+    
+    renderPrint(printContainer);
+    
+    // Fix: Access lucide through window casting to avoid "Cannot find name 'lucide'" error
+    // Update Icons
+    if (typeof (window as any).lucide !== 'undefined') {
+        (window as any).lucide.createIcons();
+    }
+
+    // Attach Dynamic Listeners
+    attachEventListeners();
 };
 
-// Expose globally for HTML onclick
-// Fix for Error: Property 'app' does not exist on type 'Window'.
+const renderHome = (container: HTMLElement) => {
+    const available = state.vouchers.filter(v => v.status === 'available');
+    const active = state.vouchers.filter(v => v.status === 'active');
+    
+    container.innerHTML = `
+        <!-- Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white border border-stone-200 p-6 rounded-2xl shadow-sm">
+                <p class="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Vocha Zilizopo</p>
+                <h3 class="text-3xl font-black">${available.length}</h3>
+            </div>
+            <div class="bg-[#5d4037] text-white p-6 rounded-2xl shadow-lg">
+                <p class="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Wateja Hewani</p>
+                <h3 class="text-3xl font-black">${active.length}</h3>
+            </div>
+            <div class="bg-white border border-stone-200 p-6 rounded-2xl shadow-sm">
+                <p class="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1">Mapato Leo (Tzs)</p>
+                <h3 class="text-3xl font-black">Coming Soon</h3>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Engine -->
+            <div class="lg:col-span-4">
+                <div class="bg-white border border-stone-200 rounded-3xl p-8 sticky top-24 shadow-sm">
+                    <h2 class="text-sm font-black uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <i data-lucide="zap" class="w-4 h-4 text-[#8d6e63]"></i> Jenereta
+                    </h2>
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-[10px] font-bold text-stone-400 uppercase mb-2">Kifurushi</label>
+                            <select id="bundle-select" class="w-full bg-stone-50 border border-stone-200 p-3 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-[#8d6e63]/20">
+                                ${BUNDLES.map(b => `<option value="${b.id}" ${state.selectedBundleId === b.id ? 'selected' : ''}>${b.name} - ${b.price} Tzs</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-stone-400 uppercase mb-2">Idadi: ${state.batchSize}</label>
+                            <input id="batch-range" type="range" min="1" max="50" value="${state.batchSize}" class="w-full h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-[#8d6e63]">
+                        </div>
+                        <button id="btn-create" class="w-full bg-[#8d6e63] hover:bg-[#7a5e54] text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest transition-all shadow-md active:scale-95">
+                            Tengeneza Vocha
+                        </button>
+                    </div>
+
+                    <div class="mt-8 pt-8 border-t border-stone-100 flex flex-col gap-2">
+                        <button onclick="window.print()" class="flex items-center justify-between p-4 bg-stone-50 rounded-xl hover:bg-stone-100 transition text-[10px] font-bold uppercase tracking-widest">
+                            Print Zilizopo <i data-lucide="printer" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Management Table -->
+            <div class="lg:col-span-8 space-y-6">
+                <!-- Active Vouchers -->
+                <div class="bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-sm">
+                    <div class="px-6 py-4 bg-stone-50 border-b border-stone-100">
+                        <h3 class="text-[10px] font-black uppercase tracking-widest">Wateja Waliopo Hewani (${active.length})</h3>
+                    </div>
+                    <div class="divide-y divide-stone-50">
+                        ${active.length === 0 ? `<p class="p-12 text-center text-stone-300 text-[10px] font-bold uppercase">Hakuna mteja anayetumia intaneti kwa sasa</p>` : ''}
+                        ${active.map(v => `
+                            <div class="p-4 flex items-center justify-between hover:bg-stone-50 transition-colors">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-mono font-black text-sm tracking-widest">${v.code}</span>
+                                        <span class="text-[8px] font-black bg-[#5d4037] text-white px-2 py-0.5 rounded uppercase">Active</span>
+                                    </div>
+                                    <p class="text-[9px] text-stone-400 font-bold mt-1 uppercase">${v.bundleName}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-[10px] font-black text-[#8d6e63] countdown-pulse">${formatTimeLeft(v.expiresAt)}</p>
+                                    <button onclick="window.app.deleteVoucher('${v.id}')" class="text-stone-300 hover:text-red-500 transition p-1"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Available Vouchers -->
+                <div class="bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-sm">
+                    <div class="px-6 py-4 bg-stone-50 border-b border-stone-100 flex justify-between items-center">
+                        <h3 class="text-[10px] font-black uppercase tracking-widest text-stone-400">Vocha Mpya Zilizopo (${available.length})</h3>
+                        <span class="text-[8px] font-bold text-stone-300">BOFYA NAKALA ILI KUANZA MUDA</span>
+                    </div>
+                    <div class="max-h-[400px] overflow-y-auto divide-y divide-stone-50">
+                        ${available.length === 0 ? `<p class="p-12 text-center text-stone-300 text-[10px] font-bold uppercase">Hakuna vocha mpya. Tengeneza hapo kando.</p>` : ''}
+                        ${available.map(v => `
+                            <div class="p-4 flex items-center justify-between hover:bg-stone-50 transition-colors">
+                                <button onclick="window.app.copyAndActivate('${v.id}', '${v.code}')" class="flex flex-col items-start group">
+                                    <span class="font-mono font-black text-stone-700 tracking-widest group-hover:text-[#8d6e63] transition-colors underline decoration-stone-200 group-hover:decoration-[#8d6e63]">${v.code}</span>
+                                    <span class="text-[9px] text-stone-400 font-bold uppercase tracking-tighter">${v.bundleName}</span>
+                                </button>
+                                <button onclick="window.app.deleteVoucher('${v.id}')" class="text-stone-200 hover:text-red-500 transition p-2"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+};
+
+const renderExpired = (container: HTMLElement) => {
+    const expired = state.vouchers.filter(v => v.status === 'expired');
+    container.innerHTML = `
+        <div class="bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-sm max-w-2xl mx-auto">
+            <div class="px-8 py-6 border-b border-stone-100 flex justify-between items-center">
+                <h2 class="text-sm font-black uppercase tracking-widest">Vocha Zilizokwisha Muda (${expired.length})</h2>
+                <button onclick="window.app.clearExpired()" class="text-red-500 text-[10px] font-black uppercase border border-red-100 px-4 py-2 rounded-xl hover:bg-red-50">Futa Zote</button>
+            </div>
+            <div class="divide-y divide-stone-50">
+                ${expired.length === 0 ? '<p class="p-20 text-center text-stone-300 text-[10px] font-bold uppercase">Hakuna vocha zilizokwisha bado</p>' : ''}
+                ${expired.map(v => `
+                    <div class="px-8 py-4 flex items-center justify-between">
+                        <div>
+                            <span class="font-mono font-black text-stone-400 line-through tracking-widest">${v.code}</span>
+                            <p class="text-[9px] text-stone-300 font-bold uppercase">${v.bundleName}</p>
+                        </div>
+                        <span class="text-[8px] font-black text-stone-300 border border-stone-100 px-2 py-1 rounded uppercase">EXPIRED</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+};
+
+const renderSettings = (container: HTMLElement) => {
+    container.innerHTML = `
+        <div class="max-w-xl mx-auto bg-white border border-stone-200 rounded-3xl p-10 text-center shadow-sm">
+            <div class="bg-stone-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                <i data-lucide="server" class="w-10 h-10 text-stone-300"></i>
+            </div>
+            <h2 class="text-xl font-black uppercase tracking-widest mb-4">Identity ya Mfumo</h2>
+            <p class="text-xs text-stone-400 mb-10 leading-relaxed uppercase font-bold tracking-tight">System yako inatambua vocha kupitia prefix "HM-". Ili kuitumia, hakikisha page yako ya login imeelekezwa hapa:</p>
+            
+            <div class="bg-stone-50 border border-stone-100 p-5 rounded-2xl mb-10 font-mono text-[11px] text-[#5d4037] break-all shadow-inner">
+                https://japhet-1234.github.io/hotspotmtaani/
+            </div>
+
+            <button onclick="localStorage.clear(); location.reload();" class="text-red-500 font-black text-[10px] uppercase tracking-widest hover:bg-red-50 w-full py-4 rounded-2xl border border-red-50 transition-all">
+                Factory Reset All Data
+            </button>
+        </div>
+    `;
+};
+
+const renderPrint = (container: HTMLElement) => {
+    const available = state.vouchers.filter(v => v.status === 'available');
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+            ${available.map(v => `
+                <div class="voucher-grid-item">
+                    <p style="font-size: 8px; font-weight: 900; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 2px;">HOTSPOT MTAANI</p>
+                    <p style="font-size: 18px; font-family: monospace; font-weight: 900; letter-spacing: 2px; margin: 10px 0;">${v.code}</p>
+                    <div style="background: #000; color: #fff; font-size: 8px; font-weight: 900; padding: 2px 0;">${v.bundleName}</div>
+                    <p style="font-size: 6px; margin-top: 5px;">MTAANI CONNECTIVITY</p>
+                </div>
+            `).join('')}
+        </div>
+    `;
+};
+
+const attachEventListeners = () => {
+    // Nav
+    document.getElementById('nav-home')?.addEventListener('click', () => { state.activeTab = 'home'; render(); });
+    document.getElementById('nav-expired')?.addEventListener('click', () => { state.activeTab = 'expired'; render(); });
+    document.getElementById('nav-settings')?.addEventListener('click', () => { state.activeTab = 'settings'; render(); });
+
+    // Fix: Cast e.target to appropriate HTML element to access 'value' property
+    // Controls
+    document.getElementById('bundle-select')?.addEventListener('change', (e) => { 
+        state.selectedBundleId = (e.target as HTMLSelectElement).value; 
+    });
+    document.getElementById('batch-range')?.addEventListener('input', (e) => { 
+        state.batchSize = parseInt((e.target as HTMLInputElement).value); 
+        render(); 
+    });
+    document.getElementById('btn-create')?.addEventListener('click', createVouchers);
+};
+
+// Fix: Cast window to any to avoid "Property 'app' does not exist on type 'Window'" error
+// --- Exposure ---
 (window as any).app = {
-  deleteVoucher,
-  handleVoucherClick
+    deleteVoucher: deleteVoucher,
+    clearExpired: () => {
+        if(confirm("Futa vocha zote zilizokwisha?")) {
+            state.vouchers = state.vouchers.filter(v => v.status !== 'expired');
+            save();
+            render();
+        }
+    },
+    copyAndActivate: (id: string, code: string) => {
+        navigator.clipboard.writeText(code).then(() => {
+            if(confirm(`Kodi ${code} imeshanakiliwa! Unataka kuianzishia muda (Activate) sasa hivi?`)) {
+                activateVoucher(id);
+            }
+        });
+    }
 };
 
-// Start
-render();
+// Start the engine
+init();
